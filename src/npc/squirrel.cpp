@@ -16,3 +16,11 @@ std::optional<std::string> Squirrel::vs(const NPC& target) const {
     return std::nullopt;
 }
 
+int Squirrel::get_move_distance() const {
+    return 5; // Белка: расстояние хода 5
+}
+
+int Squirrel::get_kill_distance() const {
+    return 5; // Белка: расстояние убийства 5
+}
+

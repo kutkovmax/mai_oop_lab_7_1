@@ -25,3 +25,11 @@ std::optional<std::string> Druid::vs(const NPC& target) const {
     return std::nullopt;
 }
 
+int Druid::get_move_distance() const {
+    return 10; // Друид: расстояние хода 10
+}
+
+int Druid::get_kill_distance() const {
+    return 10; // Друид: расстояние убийства 10
+}
+

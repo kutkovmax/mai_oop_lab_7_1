@@ -25,11 +25,20 @@ public:
     virtual Point get_position() const;
     virtual bool is_alive() const;
     
+    // Query: получение расстояния хода (не изменяет состояние)
+    virtual int get_move_distance() const = 0;
+    
+    // Query: получение расстояния убийства (не изменяет состояние)
+    virtual int get_kill_distance() const = 0;
+    
     // Qery: проверка возможности убийства (не изменяет состояние)
     virtual std::optional<std::string> vs(const NPC& target) const = 0;
 
     // Command: принятие посетителя (Visitor pattern)
     virtual void accept(Visitor& visitor) = 0;
+    
+    // Command: перемещение NPC (изменяет состояние)
+    void move(int dx, int dy, int map_width, int map_height);
     
     // Command: убить NPC (изменяет состояние)
     void kill();

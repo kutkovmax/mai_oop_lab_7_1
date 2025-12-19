@@ -25,3 +25,11 @@ std::optional<std::string> Orc::vs(const NPC& target) const {
     return std::nullopt;
 }
 
+int Orc::get_move_distance() const {
+    return 20; // Орк: расстояние хода 20
+}
+
+int Orc::get_kill_distance() const {
+    return 10; // Орк: расстояние убийства 10
+}
+
