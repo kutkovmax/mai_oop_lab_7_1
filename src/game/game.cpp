@@ -15,7 +15,9 @@ Game::Game()
     : factory(std::make_unique<NPCFactory>()),
       running(false),
       game_over(false),
-      rng(std::random_device{}()) {
+      movement_rng(std::random_device{}()),
+      battle_rng(std::random_device{}()),
+      init_rng(std::random_device{}()) {
     initialize_npcs();
 }
 
@@ -29,8 +31,8 @@ void Game::initialize_npcs() {
     std::uniform_int_distribution<int> name_dist(1, 9999);
     
     for (int i = 0; i < NUM_NPCS; ++i) {
-        std::string type = types[type_dist(rng)];
-        std::string name = type + "_" + std::to_string(name_dist(rng));
+        std::string type = types[type_dist(init_rng)];
+        std::string name = type + "_" + std::to_string(name_dist(init_rng));
         Point pos = random_position();
         
         auto npc = factory->create(type, name, pos);
@@ -41,7 +43,7 @@ void Game::initialize_npcs() {
 Point Game::random_position() const {
     std::uniform_int_distribution<int> x_dist(0, MAP_WIDTH - 1);
     std::uniform_int_distribution<int> y_dist(0, MAP_HEIGHT - 1);
-    return Point(x_dist(rng), y_dist(rng));
+    return Point(x_dist(init_rng), y_dist(init_rng));
 }
 
 void Game::start() {
@@ -73,70 +75,67 @@ void Game::stop() {
 }
 
 void Game::movement_worker() {
-    std::uniform_real_distribution<double> angle_dist(0.0, 2.0 * 3.14159265358979323846);
-    
+    std::uniform_real_distribution<double> angle_dist(0.0, 2.0 * M_PI);
+
     while (running) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Небольшая задержка
-        
-        // Получаем shared_lock для чтения NPC
-        std::shared_lock<std::shared_mutex> read_lock(npcs_mutex);
-        
-        // Создаем копию списка NPC для обработки (чтобы не держать блокировку долго)
-        std::vector<std::pair<NPC*, Point>> npc_positions;
-        for (const auto& npc : npcs) {
-            if (npc && npc->is_alive()) {
-                npc_positions.push_back({npc.get(), npc->get_position()});
+        // === 1. ДВИЖЕНИЕ NPC ===
+        {
+            std::unique_lock<std::shared_mutex> lock(npcs_mutex);
+
+            for (auto& npc_ptr : npcs) {
+                NPC* npc = npc_ptr.get();
+                if (!npc || !npc->is_alive()) continue;
+
+                double angle = angle_dist(movement_rng);
+                int move_dist = npc->get_move_distance();
+
+                int dx = static_cast<int>(std::round(std::cos(angle) * move_dist));
+                int dy = static_cast<int>(std::round(std::sin(angle) * move_dist));
+
+                npc->move(dx, dy, MAP_WIDTH, MAP_HEIGHT);
             }
         }
-        read_lock.unlock();
-        
-        // Обрабатываем движение и проверяем расстояния
-        for (auto& [npc, pos] : npc_positions) {
-            if (!npc->is_alive()) continue;
-            
-            // Получаем расстояние хода для этого NPC
-            int move_dist = npc->get_move_distance();
-            
-            // Генерируем случайное направление движения (угол)
-            double angle = angle_dist(rng);
-            
-            // Вычисляем смещение с учетом расстояния хода
-            int dx = static_cast<int>(std::round(std::cos(angle) * move_dist));
-            int dy = static_cast<int>(std::round(std::sin(angle) * move_dist));
-            
-            // Обновляем позицию с блокировкой на запись
-            {
-                std::unique_lock<std::shared_mutex> write_lock(npcs_mutex);
-                if (npc->is_alive()) { // Проверяем еще раз после получения блокировки
-                    npc->move(dx, dy, MAP_WIDTH, MAP_HEIGHT);
-                }
-            }
-            
-            // Проверяем расстояние убийства со всеми другими NPC
-            {
-                std::shared_lock<std::shared_mutex> read_lock2(npcs_mutex);
-                int kill_dist = npc->get_kill_distance();
-                Point current_pos = npc->get_position();
-                
-                for (const auto& other_npc : npcs) {
-                    if (!other_npc || !other_npc->is_alive() || other_npc.get() == npc) {
-                        continue;
+
+        // === 2. ПОИСК БОЁВ ===
+        {
+            std::shared_lock<std::shared_mutex> read_lock(npcs_mutex);
+
+            for (size_t i = 0; i < npcs.size(); ++i) {
+                NPC* a = npcs[i].get();
+                if (!a || !a->is_alive()) continue;
+
+                for (size_t j = i + 1; j < npcs.size(); ++j) {
+                    NPC* b = npcs[j].get();
+                    if (!b || !b->is_alive()) continue;
+
+                    Point pa = a->get_position();
+                    Point pb = b->get_position();
+
+                    double dx = pa.get_x() - pb.get_x();
+                    double dy = pa.get_y() - pb.get_y();
+                    double dist = std::sqrt(dx * dx + dy * dy);
+
+                    // a -> b
+                    if (dist <= a->get_kill_distance()) {
+                        std::lock_guard<std::mutex> ql(battle_queue_mutex);
+                        battle_queue.push({a, b});
                     }
-                    
-                    double distance = current_pos.distance_to(other_npc->get_position());
-                    
-                    if (distance <= kill_dist) {
-                        // Проверяем, может ли этот NPC убить другого
-                        auto kill_result = npc->vs(*other_npc);
-                        if (kill_result.has_value()) {
-                            // Создаем задачу для потока боев
-                            std::lock_guard<std::mutex> queue_lock(battle_queue_mutex);
-                            battle_queue.push(BattleTask(npc, other_npc.get()));
-                        }
+
+                    // b -> a
+                    if (dist <= b->get_kill_distance()) {
+                        std::lock_guard<std::mutex> ql(battle_queue_mutex);
+                        battle_queue.push({b, a});
                     }
                 }
             }
         }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    {
+        std::lock_guard<std::mutex> lg(cout_mutex);
+        std::cout << "[MOVE] movement_worker STOPPED\n";
     }
 }
 
@@ -156,7 +155,6 @@ void Game::battle_worker() {
         if (task.has_value()) {
             // Проверяем, что оба NPC еще живы
             {
-                std::shared_lock<std::shared_mutex> read_lock(npcs_mutex);
                 if (task->attacker->is_alive() && task->target->is_alive()) {
                     process_battle(task->attacker, task->target);
                 }
@@ -202,7 +200,7 @@ void Game::process_battle(NPC* attacker, NPC* target) {
 
 int Game::roll_dice() const {
     std::uniform_int_distribution<int> dice(1, 6);
-    return dice(rng);
+    return dice(battle_rng);
 }
 
 void Game::main_worker() {
@@ -236,7 +234,7 @@ void Game::print_map() const {
     std::lock_guard<std::mutex> cout_lock(cout_mutex);
     
     // Очищаем экран (ANSI escape code)
-    std::cout << "\033[2J\033[H";
+    // std::cout << "\033[2J\033[H";
     std::cout << "=== КАРТА ПОДЗЕМЕЛЬЯ ===\n";
     
     // Подсчитываем живых NPC
@@ -271,25 +269,24 @@ void Game::print_map() const {
         }
     }
     
-    // Выводим карту (уменьшенную версию для читаемости)
+    // Выводим карту (полная версия для лучшей видимости движения)
+    // Показываем каждую клетку карты напрямую
     const int DISPLAY_WIDTH = 50;
-    const int DISPLAY_HEIGHT = 50;
-    const int step_x = MAP_WIDTH / DISPLAY_WIDTH;
-    const int step_y = MAP_HEIGHT / DISPLAY_HEIGHT;
+    const int DISPLAY_HEIGHT = 50; // Показываем половину высоты для читаемости
     
-    for (int y = 0; y < DISPLAY_HEIGHT; y += 2) {
+    for (int y = 0; y < DISPLAY_HEIGHT; y++) {
         for (int x = 0; x < DISPLAY_WIDTH; x++) {
-            int map_x = x * step_x;
-            int map_y = y * step_y;
-            if (map_y < MAP_HEIGHT && map_x < MAP_WIDTH) {
-                std::cout << map[map_y][map_x];
+            if (y < MAP_HEIGHT && x < MAP_WIDTH) {
+                std::cout << map[y][x];
+            } else {
+                std::cout << ' ';
             }
         }
         std::cout << "\n";
     }
     
     std::cout << "\nЛегенда: O=Орк, S=Белка, D=Друид, .=пусто\n";
-    std::cout.flush();
+    // std::cout.flush();
 }
 
 std::vector<std::string> Game::get_survivors() const {

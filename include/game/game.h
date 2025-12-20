@@ -22,8 +22,8 @@ struct BattleTask {
 // Класс для управления игрой с потоками
 class Game {
 public:
-    static constexpr int MAP_WIDTH = 100;
-    static constexpr int MAP_HEIGHT = 100;
+    static constexpr int MAP_WIDTH = 50;
+    static constexpr int MAP_HEIGHT = 50;
     static constexpr int GAME_DURATION_SECONDS = 30;
     static constexpr int NUM_NPCS = 50;
     
@@ -64,8 +64,10 @@ private:
     std::atomic<bool> running;
     std::atomic<bool> game_over;
     
-    // Генератор случайных чисел
-    mutable std::mt19937 rng;
+    // Генераторы случайных чисел (по одному на поток для thread-safety)
+    mutable std::mt19937 movement_rng;
+    mutable std::mt19937 battle_rng;
+    mutable std::mt19937 init_rng;
     
     // Приватные методы потоков
     void movement_worker();

@@ -31,6 +31,7 @@ add_executable(tests
     test/test_dungeon.cpp
     test/test_battle.cpp 
     test/test_observer.cpp
+    test/test_game.cpp
     ${CPP_SOURCES}  
 )
 
