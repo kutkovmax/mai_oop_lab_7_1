@@ -55,7 +55,7 @@ private:
     // Синхронизация
     mutable std::shared_mutex npcs_mutex; // Для чтения/записи NPC
     mutable std::mutex cout_mutex; // Для защиты std::cout
-    std::mutex battle_queue_mutex; // Для очереди боев
+    mutable std::mutex battle_queue_mutex; // Для очереди боев
     
     // Очередь задач боев
     std::queue<BattleTask> battle_queue;
@@ -65,9 +65,9 @@ private:
     std::atomic<bool> game_over;
     
     // Генераторы случайных чисел (по одному на поток для thread-safety)
-    mutable std::mt19937 movement_rng;
-    mutable std::mt19937 battle_rng;
-    mutable std::mt19937 init_rng;
+    mutable std::default_random_engine movement_rng; // движение
+    mutable std::default_random_engine battle_rng;  // кубики
+    mutable std::default_random_engine init_rng;   // npc
     
     // Приватные методы потоков
     void movement_worker();
