@@ -84,7 +84,7 @@ void Game::movement_worker() {
 
             for (auto& npc_ptr : npcs) {
                 NPC* npc = npc_ptr.get();
-                if (!npc || !npc->is_alive()) continue;
+                if (!npc || !npc->is_alive()) continue; // аааа некроманты
 
                 double angle = angle_dist(movement_rng);
                 int move_dist = npc->get_move_distance();
@@ -130,7 +130,7 @@ void Game::movement_worker() {
             }
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
 
     {
