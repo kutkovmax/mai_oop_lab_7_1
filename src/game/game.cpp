@@ -233,7 +233,6 @@ void Game::main_worker() {
 void Game::print_map() const {
     std::lock_guard<std::mutex> cout_lock(cout_mutex);
     
-    // Очищаем экран (ANSI escape code)
     // std::cout << "\033[2J\033[H";
     std::cout << "=== КАРТА ПОДЗЕМЕЛЬЯ ===\n";
     
@@ -284,8 +283,6 @@ void Game::print_map() const {
         }
         std::cout << "\n";
     }
-    
-    std::cout << "\nЛегенда: O=Орк, S=Белка, D=Друид, .=пусто\n";
     // std::cout.flush();
 }
 
